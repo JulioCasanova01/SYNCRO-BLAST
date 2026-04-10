@@ -1,0 +1,1631 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lanzador Neumático v3 — ADSO</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+/* ══ TOKENS ══ */
+:root {
+  --bg:        #05070f;
+  --surface:   #0a0e1a;
+  --surface2:  #0d1220;
+  --border:    #172035;
+  --border2:   #1e2d45;
+  --glow:      #00e5ff;
+  --glow-dim:  rgba(0,229,255,.12);
+  --red:       #ff3d71;
+  --yellow:    #ffe600;
+  --green:     #00ff88;
+  --text:      #b8cfe0;
+  --muted:     #3d5570;
+  --panel-w:   272px;
+  --header-h:  52px;
+  --footer-h:  38px;
+}
+
+/* ══ RESET ══ */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  overflow: hidden;
+  height: 100vh; width: 100vw;
+  user-select: none;
+}
+/* Scanlines overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,229,255,.006) 2px, rgba(0,229,255,.006) 4px
+  );
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* ══ 3D CANVAS ══ */
+#canvas3d { position: fixed; inset: 0; z-index: 1; }
+
+/* ══ HEADER ══ */
+#header {
+  position: fixed; top: 0; left: 0; right: 0; height: var(--header-h);
+  background: linear-gradient(90deg, #05070f 0%, #0c1525 50%, #05070f 100%);
+  border-bottom: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+  z-index: 100;
+}
+.h-logo {
+  font-family: 'Orbitron', sans-serif; font-weight: 900;
+  font-size: 12px; letter-spacing: 5px; color: var(--glow);
+  text-shadow: 0 0 20px var(--glow), 0 0 40px rgba(0,229,255,.25);
+}
+.h-status {
+  display: flex; align-items: center; gap: 18px;
+  font-size: 9px; letter-spacing: 1px;
+}
+.h-pill {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--muted);
+}
+.h-pill.live { border-color: rgba(0,229,255,.3); }
+.dot-pulse {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 6px var(--green);
+  animation: blink 1.8s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+.h-badge {
+  font-size: 9px; letter-spacing: 2px; color: var(--muted);
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: 3px;
+}
+#hdr-state { color: var(--green); }
+#hdr-pres  { color: var(--green); }
+
+/* ══ CORNER BRACKETS ══ */
+.corner { position: fixed; width: 18px; height: 18px; z-index: 60; }
+.corner::before, .corner::after {
+  content: ''; position: absolute;
+  background: var(--glow); box-shadow: 0 0 4px var(--glow);
+}
+.corner::before { width: 100%; height: 1.5px; top: 0; left: 0; }
+.corner::after  { width: 1.5px; height: 100%; top: 0; left: 0; }
+.corner.tl { top: var(--header-h); left: 0; }
+.corner.tr { top: var(--header-h); right: 0; transform: scaleX(-1); }
+.corner.bl { bottom: var(--footer-h); left: 0; transform: scaleY(-1); }
+.corner.br { bottom: var(--footer-h); right: 0; transform: scale(-1,-1); }
+
+/* ══ SIDE PANELS ══ */
+.panel {
+  position: fixed;
+  top: var(--header-h); bottom: var(--footer-h);
+  width: var(--panel-w);
+  background: linear-gradient(160deg, rgba(10,14,26,.98) 0%, rgba(5,7,15,.98) 100%);
+  backdrop-filter: blur(20px);
+  z-index: 50;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+#panel-L { left: 0;  border-right: 1px solid var(--border2); }
+#panel-R { right: 0; border-left:  1px solid var(--border2); }
+
+/* Panel inner scroll area */
+.panel-scroll {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 14px 14px 8px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.panel-scroll::-webkit-scrollbar { width: 2px; }
+.panel-scroll::-webkit-scrollbar-thumb { background: var(--border2); }
+
+/* Section label */
+.sec-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 9px; letter-spacing: 3px;
+  color: var(--glow); text-shadow: 0 0 10px var(--glow);
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--border2);
+  flex-shrink: 0;
+}
+
+/* Card wrapper */
+.card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.card-title {
+  font-size: 9px; letter-spacing: 2px; color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* ══ ELEVATION CONTROL ══ */
+.elv-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.elv-row  { display: flex; align-items: center; gap: 10px; }
+.elv-ticks {
+  display: flex; flex-direction: column;
+  justify-content: space-between; height: 120px;
+  font-size: 9px; color: var(--muted); text-align: right;
+  letter-spacing: 1px; line-height: 1;
+}
+.elv-rail {
+  width: 76px; height: 120px;
+  border-radius: 38px;
+  background: radial-gradient(ellipse at center, #0e1828 0%, #060a12 80%);
+  border: 1.5px solid var(--border2);
+  box-shadow: 0 0 16px rgba(0,229,255,.05), inset 0 0 16px rgba(0,0,0,.5);
+  position: relative;
+  cursor: ns-resize; touch-action: none;
+}
+/* Center line */
+.elv-rail::before {
+  content: ''; position: absolute;
+  left: 50%; top: 12px; bottom: 12px; width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(0,229,255,.2) 40%, rgba(0,229,255,.2) 60%, transparent);
+  transform: translateX(-50%);
+}
+/* Center tick */
+.elv-rail::after {
+  content: ''; position: absolute;
+  left: 50%; top: 50%; width: 20px; height: 1px;
+  background: rgba(0,229,255,.18);
+  transform: translate(-50%,-50%);
+}
+#elv-knob {
+  position: absolute;
+  width: 38px; height: 38px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 36%, #1e3050, #0c1828);
+  border: 2px solid var(--glow);
+  box-shadow: 0 0 14px var(--glow), inset 0 0 5px rgba(0,229,255,.3);
+  left: 50%; top: 50%;
+  transform: translate(-50%,-50%);
+  pointer-events: none;
+  transition: box-shadow .1s;
+}
+/* Arrow indicator on knob */
+#elv-knob::after {
+  content: '▲';
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 8px; color: rgba(0,229,255,.7);
+  text-shadow: 0 0 6px var(--glow);
+}
+.elv-readout {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 22px; color: var(--glow);
+  text-shadow: 0 0 18px var(--glow);
+  text-align: center; letter-spacing: 1px;
+}
+.elv-readout sub { font-size: 8px; color: var(--muted); letter-spacing: 2px; vertical-align: middle; }
+
+/* ══ AZIMUTH BUTTONS ══ */
+.az-wrap { display: flex; flex-direction: column; gap: 8px; }
+.az-readout {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 12px;
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 5px;
+}
+.az-readout-label { font-size: 9px; letter-spacing: 1px; color: var(--muted); }
+.az-readout-val {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 16px; color: var(--glow);
+  text-shadow: 0 0 12px var(--glow); letter-spacing: 1px;
+}
+.az-btns {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: stretch;
+}
+.az-btn {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  cursor: pointer;
+  padding: 10px 6px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: all .12s;
+  touch-action: manipulation;
+}
+.az-btn:hover  { border-color: var(--glow); background: rgba(0,229,255,.06); }
+.az-btn:active,
+.az-btn.pressed {
+  transform: scale(.92);
+  background: rgba(0,229,255,.10);
+  border-color: var(--glow);
+  box-shadow: 0 0 16px rgba(0,229,255,.25);
+}
+.az-btn .ico { font-size: 18px; line-height: 1; color: var(--glow); text-shadow: 0 0 8px var(--glow); }
+.az-btn .lbl { font-size: 9px; color: var(--muted); letter-spacing: 1px; }
+/* 180° special */
+.az-btn-180 {
+  background: linear-gradient(140deg, #0d1e2e, #132030);
+  border: 1px solid rgba(255,230,0,.35);
+  border-radius: 7px; padding: 10px 10px 8px;
+  color: var(--yellow); font-family: 'Share Tech Mono', monospace;
+  cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: all .12s; touch-action: manipulation;
+}
+.az-btn-180:hover  { box-shadow: 0 0 14px rgba(255,230,0,.2); border-color: var(--yellow); }
+.az-btn-180:active { transform: scale(.92); background: rgba(255,230,0,.08); box-shadow: 0 0 22px rgba(255,230,0,.3); }
+.az-btn-180 .ico { font-size: 18px; color: var(--yellow); text-shadow: 0 0 8px var(--yellow); }
+.az-btn-180 .lbl { font-size: 9px; color: rgba(255,230,0,.6); letter-spacing: 1px; }
+.az-hint { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-align: center; opacity: .7; }
+
+/* ══ BARS ══ */
+.bars { display: flex; flex-direction: column; gap: 6px; }
+.bar-row {
+  display: flex; align-items: center; gap: 6px;
+}
+.bar-name { font-size: 9px; letter-spacing: 1px; color: var(--muted); width: 62px; flex-shrink: 0; }
+.bar-track { flex: 1; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.bar-fill  { height: 100%; border-radius: 2px; transition: width .15s; }
+.bar-fill.c { background: linear-gradient(90deg,#00b4d8,var(--glow)); box-shadow: 0 0 6px var(--glow); }
+.bar-fill.r { background: linear-gradient(90deg,#cc2244,var(--red));  box-shadow: 0 0 6px var(--red); }
+.bar-fill.y { background: linear-gradient(90deg,#cca800,var(--yellow)); box-shadow: 0 0 6px var(--yellow); }
+.bar-fill.g { background: linear-gradient(90deg,#00aa55,var(--green)); box-shadow: 0 0 6px var(--green); }
+.bar-pct { font-size: 9px; color: var(--muted); width: 28px; text-align: right; flex-shrink: 0; }
+
+/* ══ STAT ROWS ══ */
+.stat { display: flex; justify-content: space-between; align-items: center; }
+.stat-key { font-size: 9px; letter-spacing: 1px; color: var(--muted); }
+.stat-val {
+  font-family: 'Orbitron', sans-serif; font-size: 12px;
+  color: var(--glow); text-shadow: 0 0 8px var(--glow);
+}
+.stat-val.g  { color: var(--green);  text-shadow: 0 0 8px var(--green); }
+.stat-val.y  { color: var(--yellow); text-shadow: 0 0 8px var(--yellow); }
+.stat-val.r  { color: var(--red);    text-shadow: 0 0 8px var(--red); }
+
+/* ══ 2D SYRINGE ══ */
+.syr2d-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  position: relative;
+}
+/* The plunger assembly sits above and slides down */
+.syr2d-plunger-asm {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 0;
+  transition: transform .12s;
+}
+.syr2d-head {
+  width: 46px; height: 12px;
+  background: linear-gradient(180deg, #2a3a55, #18283a);
+  border: 1px solid rgba(80,130,180,.4);
+  border-radius: 3px 3px 0 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,.4);
+  position: relative;
+}
+.syr2d-head::after {
+  content: ''; position: absolute;
+  top: 4px; left: 4px; right: 4px; height: 3px;
+  background: rgba(0,229,255,.15); border-radius: 1px;
+}
+.syr2d-seal {
+  width: 40px; height: 5px;
+  background: linear-gradient(180deg, #c03040, #801020);
+  border-radius: 1px;
+}
+.syr2d-rod {
+  width: 7px;
+  background: linear-gradient(90deg, #304555, #4a6070);
+  border-radius: 0 0 2px 2px;
+  transition: height .12s linear;
+  box-shadow: 0 0 4px rgba(0,229,255,.08);
+}
+/* Barrel */
+.syr2d-barrel {
+  width: 38px; height: 100px;
+  border: 1.5px solid rgba(0,229,255,.35);
+  border-radius: 4px;
+  background: rgba(10,25,40,.5);
+  position: relative; overflow: hidden;
+  box-shadow: inset 0 0 10px rgba(0,229,255,.06);
+}
+.syr2d-liquid {
+  position: absolute; bottom: 0; left: 1px; right: 1px;
+  background: linear-gradient(180deg, rgba(0,229,255,.06), rgba(0,229,255,.22));
+  border-radius: 3px;
+  transition: height .12s linear;
+}
+/* Graduation marks */
+.syr2d-barrel::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; right: 5px; width: 1px;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0px, transparent 14px,
+    rgba(0,229,255,.25) 14px, rgba(0,229,255,.25) 15px
+  );
+}
+.syr2d-barrel::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 5px; width: 1px;
+  background: repeating-linear-gradient(
+    180deg,
+    transparent 0px, transparent 14px,
+    rgba(0,229,255,.18) 14px, rgba(0,229,255,.18) 15px
+  );
+}
+/* Ears at bottom */
+.syr2d-ears {
+  display: flex; justify-content: space-between; width: 54px;
+}
+.syr2d-ear {
+  width: 8px; height: 9px;
+  background: rgba(0,229,255,.08);
+  border: 1px solid rgba(0,229,255,.2); border-radius: 0 0 2px 2px;
+}
+/* Nozzle */
+.syr2d-nozzle-asm { display: flex; flex-direction: column; align-items: center; }
+.syr2d-neck   { width: 10px; height: 4px; background: rgba(0,229,255,.3); }
+.syr2d-tip    { width: 5px;  height: 10px; background: rgba(0,229,255,.55); border-radius: 0 0 2px 2px;
+  box-shadow: 0 4px 8px rgba(0,229,255,.25); }
+
+.press-arrow {
+  font-size: 12px; color: var(--red);
+  text-shadow: 0 0 10px var(--red);
+  opacity: 0; transition: opacity .15s;
+  animation: arr 0.55s ease-in-out infinite;
+}
+.press-arrow.on { opacity: 1; }
+@keyframes arr { 0%,100%{transform:translateY(0)} 50%{transform:translateY(3px)} }
+
+/* ══ GAUGE ══ */
+.gauge-ring {
+  width: 78px; height: 78px; border-radius: 50%;
+  background: conic-gradient(#1a2840 0deg, #1a2840 360deg);
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto;
+  transition: background .1s;
+  transform: rotate(135deg);
+}
+.gauge-core {
+  width: 60px; height: 60px; border-radius: 50%;
+  background: var(--surface);
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  font-family: 'Orbitron', sans-serif;
+  transform: rotate(-135deg);
+}
+.gauge-val  { font-size: 14px; color: var(--red); text-shadow: 0 0 10px var(--red); }
+.gauge-unit { font-size: 9px; color: var(--muted); letter-spacing: 1px; }
+
+/* ══ FIRE BUTTON ══ */
+.fire-section { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.fire-label { font-size: 9px; letter-spacing: 2px; color: var(--muted); text-align: center; }
+#btn-fire {
+  width: 106px; height: 106px; border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #ff5555, #cc0020 50%, #6a000f);
+  border: 2px solid var(--red);
+  box-shadow: 0 0 24px rgba(255,61,113,.4), 0 0 50px rgba(200,0,0,.15),
+              inset 0 0 18px rgba(0,0,0,.4);
+  cursor: pointer;
+  font-family: 'Orbitron', sans-serif; font-weight: 900;
+  font-size: 11px; letter-spacing: 3px; color: #fff;
+  text-shadow: 0 0 10px #fff;
+  transition: all .1s;
+  position: relative; overflow: hidden;
+}
+#btn-fire::before {
+  content: '';
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 42% 28%, rgba(255,255,255,.22), transparent 56%);
+}
+#btn-fire::after {
+  content: ''; position: absolute;
+  top: -50%; left: -50%; width: 200%; height: 200%;
+  background: conic-gradient(transparent 0deg, rgba(255,61,113,.1) 55deg, transparent 110deg);
+  animation: fire-spin 3.5s linear infinite;
+  border-radius: 50%;
+}
+#btn-fire:active, #btn-fire.fired {
+  transform: scale(.90);
+  box-shadow: 0 0 55px rgba(255,61,113,.85), 0 0 100px rgba(220,0,0,.45);
+}
+@keyframes fire-spin { to { transform: rotate(360deg); } }
+
+/* ══ MICROBIT ══ */
+.mb-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 3px; }
+.mb-led {
+  aspect-ratio: 1; border-radius: 2px;
+  background: #1a0404; border: 1px solid #2a0f0f;
+  transition: all .1s;
+}
+.mb-led.on {
+  background: #ff2200;
+  box-shadow: 0 0 5px #ff3300, 0 0 10px rgba(255,50,0,.45);
+  border-color: #ff4400;
+}
+
+/* ══ LOG ══ */
+.log-box {
+  flex: 1; min-height: 80px; max-height: 170px;
+  background: rgba(0,0,0,.3);
+  border: 1px solid var(--border);
+  border-radius: 4px; padding: 7px 8px;
+  overflow-y: auto; font-size: 10px; line-height: 1.9; color: var(--muted);
+}
+.log-box::-webkit-scrollbar { width: 2px; }
+.log-box::-webkit-scrollbar-thumb { background: var(--border2); }
+.log-row { display: flex; gap: 6px; }
+.log-t   { color: var(--glow); opacity: .5; flex-shrink: 0; }
+.log-m.ok   { color: var(--green); }
+.log-m.warn { color: var(--yellow); }
+.log-m.fire { color: var(--red); font-weight: bold; }
+
+/* ══ FOOTER ══ */
+#footer {
+  position: fixed; bottom: 0; left: var(--panel-w); right: var(--panel-w);
+  height: var(--footer-h);
+  background: rgba(5,7,15,.97);
+  border-top: 1px solid var(--border2);
+  display: flex; align-items: center; justify-content: center; gap: 22px;
+  z-index: 50; font-size: 9px; letter-spacing: 1px; color: var(--muted);
+}
+.dh {
+  display: flex; align-items: center; gap: 4px;
+}
+.key {
+  display: inline-flex; align-items: center;
+  padding: 1px 6px; border: 1px solid var(--border2);
+  border-radius: 3px; color: var(--glow); margin-right: 2px;
+  font-size: 9px; font-family: 'Share Tech Mono', monospace;
+}
+
+/* ══ LAUNCH FX ══ */
+#launch-fx {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  pointer-events: none; z-index: 200; display: none;
+  font-family: 'Orbitron', sans-serif; font-weight: 900;
+  font-size: 46px; letter-spacing: 8px;
+  color: var(--red); text-shadow: 0 0 40px var(--red), 0 0 80px rgba(255,60,100,.4);
+}
+@keyframes fx-anim {
+  0%   { opacity:1; transform:translate(-50%,-50%) scale(.5); }
+  25%  { opacity:1; transform:translate(-50%,-50%) scale(1.3); }
+  100% { opacity:0; transform:translate(-50%,-50%) scale(1.8); }
+}
+.fx-on { animation: fx-anim .7s ease-out forwards; }
+
+/* ══ RESPONSIVE — toggle buttons ══ */
+.panel-toggle {
+  display: none; position: fixed; bottom: 50px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(10,14,26,.94);
+  border: 1px solid var(--border2);
+  color: var(--glow); font-family: 'Orbitron', sans-serif;
+  font-size: 7px; letter-spacing: 1px;
+  align-items: center; justify-content: center;
+  text-align: center; line-height: 1.3;
+  z-index: 80; cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+.panel-toggle.active { border-color: var(--glow); box-shadow: 0 0 14px rgba(0,229,255,.3); }
+#tog-L { left: 10px; }
+#tog-R { right: 10px; }
+#panel-backdrop {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.55); z-index: 45;
+  backdrop-filter: blur(3px);
+}
+#panel-backdrop.show { display: block; }
+
+@media (max-width: 900px) {
+  :root { --panel-w: 220px; }
+  .h-badge { display: none; }
+}
+@media (max-width: 640px) {
+  :root { --panel-w: 0px; --header-h: 46px; }
+  #header { padding: 0 12px; }
+  .h-logo { font-size: 11px; letter-spacing: 3px; }
+  .h-status { display: none; }
+  .panel {
+    width: min(88vw, 290px);
+    top: 46px; bottom: 48px;
+    transition: transform .3s cubic-bezier(.4,0,.2,1);
+    overflow-y: auto;
+  }
+  #panel-L { transform: translateX(-110%); }
+  #panel-R { transform: translateX(110%); }
+  #panel-L.open { transform: translateX(0); }
+  #panel-R.open { transform: translateX(0); }
+  #footer { left: 0; right: 0; height: 48px; gap: 6px; }
+  #footer .dh { display: none; }
+  .panel-toggle { display: flex; }
+  .corner.tl, .corner.tr { top: 46px; }
+  .corner.bl, .corner.br { bottom: 48px; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div id="header">
+  <div class="h-logo">⬡ LANZADOR NEUMÁTICO</div>
+  <div class="h-status">
+    <div class="h-pill live">
+      <span class="dot-pulse"></span>
+      ESTADO: <strong id="hdr-state">STANDBY</strong>
+    </div>
+    <div class="h-pill">
+      PRESIÓN: <strong id="hdr-pres">0 kPa</strong>
+    </div>
+  </div>
+  <div class="h-badge">micro:bit · ADSO</div>
+</div>
+
+<!-- Corners -->
+<div class="corner tl"></div><div class="corner tr"></div>
+<div class="corner bl"></div><div class="corner br"></div>
+
+<!-- 3D Canvas -->
+<canvas id="canvas3d"></canvas>
+
+<!-- ═══ PANEL IZQUIERDO ═══ -->
+<div class="panel" id="panel-L">
+  <div class="panel-scroll">
+
+    <div class="sec-label">CONTROL DE ELEVACIÓN</div>
+
+    <!-- Elevation slider -->
+    <div class="elv-wrap">
+      <div class="elv-row">
+        <div class="elv-ticks">
+          <span>+40°</span><span>+20°</span>
+          <span style="color:var(--glow);opacity:.5">—</span>
+          <span>−20°</span><span>−40°</span>
+        </div>
+        <div class="elv-rail" id="elv-zone">
+          <div id="elv-knob"></div>
+        </div>
+        <div style="font-size:7px;color:var(--muted);writing-mode:vertical-rl;
+                    letter-spacing:3px;text-transform:uppercase;opacity:.6">
+          PALANCA
+        </div>
+      </div>
+      <div class="elv-readout" id="elv-readout">
+        +00°<sub> ELV</sub>
+      </div>
+    </div>
+
+    <div class="sec-label">CONTROL DE AZIMUT</div>
+
+    <!-- Azimuth buttons -->
+    <div class="az-wrap">
+      <div class="az-readout">
+        <span class="az-readout-label">ÁNGULO SERVO</span>
+        <span class="az-readout-val" id="az-val">090°</span>
+      </div>
+      <div class="az-btns">
+        <button class="az-btn" id="btn-az-L"
+          onmousedown="azLeftDown()" onmouseup="azUp()" onmouseleave="azUp()"
+          ontouchstart="azLeftDown()" ontouchend="azUp()">
+          <span class="ico">◄</span>
+          <span class="lbl">−15°</span>
+        </button>
+        <button class="az-btn-180" onclick="do180()">
+          <span class="ico">⟲</span>
+          <span class="lbl">180°</span>
+        </button>
+        <button class="az-btn" id="btn-az-R"
+          onmousedown="azRightDown()" onmouseup="azUp()" onmouseleave="azUp()"
+          ontouchstart="azRightDown()" ontouchend="azUp()">
+          <span class="ico">►</span>
+          <span class="lbl">+15°</span>
+        </button>
+      </div>
+      <div class="az-hint">Mantén ◄ + ► simultáneamente → 180°</div>
+    </div>
+
+    <!-- Bars -->
+    <div class="card">
+      <div class="card-title">SERVOS</div>
+      <div class="bars">
+        <div class="bar-row">
+          <span class="bar-name">AZIMUT</span>
+          <div class="bar-track"><div class="bar-fill c" id="bar-az" style="width:50%"></div></div>
+          <span class="bar-pct" id="pct-az">50%</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-name">ELEVACIÓN</span>
+          <div class="bar-track"><div class="bar-fill y" id="bar-elv" style="width:50%"></div></div>
+          <span class="bar-pct" id="pct-elv">50%</span>
+        </div>
+      </div>
+      <div class="stat">
+        <span class="stat-key">PWM DIR</span>
+        <span class="stat-val" id="pwm-az">090°</span>
+      </div>
+      <div class="stat">
+        <span class="stat-key">PIN P0</span>
+        <span class="stat-val g">SERVO AZ</span>
+      </div>
+      <div class="stat">
+        <span class="stat-key">PIN P1</span>
+        <span class="stat-val g">SERVO ELV</span>
+      </div>
+    </div>
+
+    <div class="sec-label">JERINGA ACTUADORA</div>
+
+    <!-- 2D Syringe visualization -->
+    <div class="card" style="align-items:center">
+      <div class="card-title">COMPRESOR NEUMÁTICO</div>
+
+      <div class="syr2d-wrap">
+        <!-- Plunger assembly (moves down as a unit) -->
+        <div class="syr2d-plunger-asm" id="plunger-asm">
+          <div class="syr2d-head"></div>
+          <div class="syr2d-seal"></div>
+          <div class="syr2d-rod" id="rod-vis" style="height:28px"></div>
+        </div>
+        <!-- Barrel -->
+        <div class="syr2d-barrel">
+          <div class="syr2d-liquid" id="liquid-vis" style="height:88%"></div>
+        </div>
+        <!-- Ears + nozzle -->
+        <div class="syr2d-ears">
+          <div class="syr2d-ear"></div>
+          <div class="syr2d-ear"></div>
+        </div>
+        <div class="syr2d-nozzle-asm">
+          <div class="syr2d-neck"></div>
+          <div class="syr2d-tip"></div>
+        </div>
+      </div>
+
+      <div class="press-arrow" id="press-arrow">▼ PRESIÓN ▼</div>
+
+      <div class="bars" style="width:100%">
+        <div class="bar-row">
+          <span class="bar-name">COMPRESIÓN</span>
+          <div class="bar-track"><div class="bar-fill r" id="bar-comp" style="width:0%"></div></div>
+          <span class="bar-pct" id="pct-comp">0%</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-name">MANGUERA</span>
+          <div class="bar-track"><div class="bar-fill c" id="bar-tube" style="width:0%"></div></div>
+          <span class="bar-pct" id="pct-tube">0%</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panel-scroll -->
+</div><!-- /panel-L -->
+
+<!-- ═══ PANEL DERECHO ═══ -->
+<div class="panel" id="panel-R">
+  <div class="panel-scroll">
+
+    <div class="sec-label">EYECCIÓN</div>
+
+    <!-- Fire button -->
+    <div class="fire-section">
+      <div class="fire-label">PRESIONAR JERINGA → LANZAR</div>
+      <button id="btn-fire" onclick="fireAction()">FIRE</button>
+      <div style="font-size:9px;letter-spacing:2px;color:var(--muted)">[SPACE] O CLIC</div>
+    </div>
+
+    <!-- Ejection pressure bar -->
+    <div class="card">
+      <div class="card-title">PRESIÓN DE EYECCIÓN</div>
+      <div class="bars">
+        <div class="bar-row">
+          <span class="bar-name">EYECCIÓN</span>
+          <div class="bar-track"><div class="bar-fill r" id="bar-ey" style="width:0%"></div></div>
+          <span class="bar-pct" id="pct-ey">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-label">MANÓMETRO</div>
+
+    <!-- Gauge -->
+    <div class="card" style="align-items:center">
+      <div class="gauge-ring" id="gauge-ring">
+        <div class="gauge-core">
+          <div class="gauge-val" id="gauge-psi">0</div>
+          <div class="gauge-unit">kPa</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="card-title">SISTEMA</div>
+      <div class="stat">
+        <span class="stat-key">LANZAMIENTOS</span>
+        <span class="stat-val" id="shot-count">000</span>
+      </div>
+      <div class="stat">
+        <span class="stat-key">VOLUMEN ACT.</span>
+        <span class="stat-val y">10 ml</span>
+      </div>
+      <div class="stat">
+        <span class="stat-key">PIN DISPARO</span>
+        <span class="stat-val g">P2</span>
+      </div>
+    </div>
+
+    <div class="sec-label">MICRO:BIT</div>
+
+    <!-- Microbit LED matrix -->
+    <div class="card">
+      <div class="card-title">MATRIZ LED 5×5</div>
+      <div class="mb-grid" id="mb-grid"></div>
+    </div>
+
+    <!-- Log -->
+    <div class="sec-label">LOG DEL SISTEMA</div>
+    <div class="log-box" id="log-box"></div>
+
+  </div><!-- /panel-scroll -->
+</div><!-- /panel-R -->
+
+<!-- FOOTER -->
+<div id="footer">
+  <span class="dh"><span class="key">DRAG</span>Rotar</span>
+  <span class="dh"><span class="key">SCROLL</span>Zoom</span>
+  <span class="dh"><span class="key">↑↓</span>Elevación</span>
+  <span class="dh"><span class="key">←→</span>Azimut ±15°</span>
+  <span class="dh"><span class="key">R</span>180°</span>
+  <span class="dh"><span class="key">SPACE</span>Disparar</span>
+</div>
+
+<!-- Responsive panel toggles -->
+<button class="panel-toggle" id="tog-L">⬡<br>CTL</button>
+<button class="panel-toggle" id="tog-R">EYE<br>⬡</button>
+<div id="panel-backdrop"></div>
+<div id="launch-fx">¡FUEGO!</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════
+//  RENDERER / SCENE / CAMERA
+// ═══════════════════════════════════════════════════
+const canvas3d = document.getElementById('canvas3d');
+const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setSize(innerWidth, innerHeight);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x05070f, 0.034);
+
+const camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 200);
+
+// ── Luces ──
+scene.add(new THREE.AmbientLight(0x10202e, 2.0));
+const dirLight = new THREE.DirectionalLight(0xffd0a0, 1.1);
+dirLight.position.set(6, 14, 6);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+scene.add(dirLight);
+const ptRed  = new THREE.PointLight(0xff3d71, 2.0,  9);  ptRed.position.set(-3, 2,  2); scene.add(ptRed);
+const ptCyan = new THREE.PointLight(0x00e5ff, 1.5, 11); ptCyan.position.set( 2, 4, -2); scene.add(ptCyan);
+const ptWarm = new THREE.PointLight(0xffaa44, 0.8,  8);  ptWarm.position.set( 0, 1,  4); scene.add(ptWarm);
+
+// ── Materiales ──
+const M = {
+  clay:    new THREE.MeshStandardMaterial({ color:0xa05020, roughness:.85, metalness:.02 }),
+  clayD:   new THREE.MeshStandardMaterial({ color:0x7a3010, roughness:.9,  metalness:.01 }),
+  wood:    new THREE.MeshStandardMaterial({ color:0xd4aa66, roughness:.78, metalness:.0  }),
+  woodD:   new THREE.MeshStandardMaterial({ color:0xb08040, roughness:.85, metalness:.0  }),
+  syr:     new THREE.MeshStandardMaterial({ color:0xc8e8f4, roughness:.04, metalness:.08, transparent:true, opacity:.60 }),
+  syrB:    new THREE.MeshStandardMaterial({ color:0xa0cce0, roughness:.04, metalness:.10, transparent:true, opacity:.50 }),
+  liquid:  new THREE.MeshStandardMaterial({ color:0x00c8e8, roughness:.05, metalness:.0,  transparent:true, opacity:.55, emissive:0x005060, emissiveIntensity:.4 }),
+  plunger: new THREE.MeshStandardMaterial({ color:0x2a3450, roughness:.35, metalness:.75 }),
+  seal:    new THREE.MeshStandardMaterial({ color:0xcc2020, roughness:.55, metalness:.1  }),
+  tube:    new THREE.MeshStandardMaterial({ color:0xd8eef8, roughness:.04, metalness:.0,  transparent:true, opacity:.42 }),
+  microbit:new THREE.MeshStandardMaterial({ color:0x1a3399, roughness:.6,  metalness:.3  }),
+  black:   new THREE.MeshStandardMaterial({ color:0x111111, roughness:.5,  metalness:.4  }),
+  red:     new THREE.MeshStandardMaterial({ color:0xff2222, emissive:0x440000, roughness:.3 }),
+  metal:   new THREE.MeshStandardMaterial({ color:0x8899aa, roughness:.18, metalness:.92 }),
+  gold:    new THREE.MeshStandardMaterial({ color:0xddaa44, roughness:.14, metalness:.96 }),
+  ledOn:   new THREE.MeshStandardMaterial({ color:0xff2200, emissive:0xaa1100, roughness:.3 }),
+  ledOff:  new THREE.MeshStandardMaterial({ color:0x1a0505, roughness:.7 }),
+  wire:    new THREE.MeshStandardMaterial({ color:0xff3333, roughness:.7 }),
+  wireY:   new THREE.MeshStandardMaterial({ color:0xffdd00, roughness:.7 }),
+  wireB:   new THREE.MeshStandardMaterial({ color:0x2255cc, roughness:.7 }),
+  servo:   new THREE.MeshStandardMaterial({ color:0x1a2030, roughness:.45, metalness:.55 }),
+  glow:    new THREE.MeshStandardMaterial({ color:0x00e5ff, emissive:0x004466, roughness:.2, metalness:.3, transparent:true, opacity:.7 }),
+};
+
+// ── Geometry helpers ──
+function V3(x,y,z){ return new THREE.Vector3(x,y,z); }
+
+function mkBox(w,h,d, mat, px=0,py=0,pz=0, rx=0,ry=0,rz=0, par=scene){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(px,py,pz); m.rotation.set(rx,ry,rz);
+  m.castShadow=true; m.receiveShadow=true; par.add(m); return m;
+}
+function mkCyl(rt,rb,h,seg, mat, px=0,py=0,pz=0, rx=0,ry=0,rz=0, par=scene){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg), mat);
+  m.position.set(px,py,pz); m.rotation.set(rx,ry,rz);
+  m.castShadow=true; m.receiveShadow=true; par.add(m); return m;
+}
+function mkSph(r,seg, mat, px=0,py=0,pz=0, par=scene){
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r,seg,seg), mat);
+  m.position.set(px,py,pz); m.castShadow=true; par.add(m); return m;
+}
+function mkTube(pts, mat, rad=0.022, seg=6){
+  const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 56, rad, seg, false);
+  const m = new THREE.Mesh(geo, mat); m.castShadow=true; scene.add(m); return m;
+}
+
+// ═══════════════════════════════════════════════════
+//  SCENE GEOMETRY
+// ═══════════════════════════════════════════════════
+
+// Suelo
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(30,30),
+  new THREE.MeshStandardMaterial({ color:0x050710, roughness:.97, metalness:.05 })
+);
+floor.rotation.x = -Math.PI/2; floor.position.y = -0.19;
+floor.receiveShadow = true; scene.add(floor);
+scene.add(new THREE.GridHelper(28, 28, 0x182030, 0x0d1520));
+
+// Base arcilla
+mkBox(7.2, 0.2, 5.2, M.clay, 0,-0.1,0);
+
+// Raft de palitos
+const RY = 0.3;
+[-0.85,-0.28,0.28,0.85].forEach(z => mkBox(3.9,.09,.11, M.wood, 0.3,RY,z));
+[-1.5,-.8,-.1,.5,1.1,1.7,2.2].forEach(x => mkBox(.11,.09,2.0, M.woodD, x,RY+.05,0));
+mkBox(3.9,.06,.1, M.woodD,  0.3,RY+.08,-0.95);
+mkBox(3.9,.06,.1, M.woodD,  0.3,RY+.08, 0.95);
+mkBox(.1,.06,2.0, M.woodD, -1.6,RY+.08, 0);
+mkBox(.1,.06,2.0, M.woodD,  2.3,RY+.08, 0);
+[[-1.5,-.85],[-1.5,.85],[2.2,-.85],[2.2,.85]].forEach(([px,pz]) =>
+  mkBox(.12,.22,.12, M.woodD, px,RY-.12,pz)
+);
+
+// Bloque arcilla
+const CX=-0.9, CY=RY+.09, CZ=0;
+mkBox(1.7,1.1,1.5,  M.clay,  CX,CY+.55,CZ);
+mkBox(1.72,.04,1.52, M.clayD, CX,CY+.2, CZ);
+mkBox(1.72,.04,1.52, M.clayD, CX,CY+.9, CZ);
+mkBox(.04,1.1,1.52,  M.clayD, CX-.85,CY+.55,CZ);
+mkBox(.04,1.1,1.52,  M.clayD, CX+.85,CY+.55,CZ);
+
+
+// Jeringa proyectil estática (sobre soporte de clay)
+const SX=CX-.6, SY=CY+.82, SZ=CZ+.1;
+// Soportes
+[[SX-.38,SY-.12,SZ-.12],[SX-.38,SY-.12,SZ+.12],[SX+.25,SY-.12,SZ-.12],[SX+.25,SY-.12,SZ+.12]]
+  .forEach(([x,y,z]) => mkBox(.07,.22,.07, M.wood, x,y,z));
+mkBox(.72,.05,.05, M.wood, SX-.06,SY,SZ-.12);
+mkBox(.72,.05,.05, M.wood, SX-.06,SY,SZ+.12);
+// Cuerpo barril (a lo largo del eje Z, rx=PI/2)
+mkCyl(.082,.082,.98,16, M.syr, SX,SY,SZ, Math.PI/2,0,0);
+// Líquido interior
+mkCyl(.065,.065,.90,16, M.liquid, SX,SY,SZ, Math.PI/2,0,0);
+// Anillos de graduación
+for(let i=0;i<5;i++) mkCyl(.084,.084,.012,12, M.metal, SX-0.3+i*.18,SY,SZ, Math.PI/2,0,0);
+// Émbolo + sello (dentro del barril)
+mkCyl(.074,.074,.24,14, M.plunger, SX,SY,SZ-.22, Math.PI/2,0,0);
+mkCyl(.083,.083,.025,14, M.seal,   SX,SY,SZ-.10, Math.PI/2,0,0);
+// Punta cánula (extremo frontal del barril, en +Z)
+mkCyl(.022,.010,.32,8, M.metal, SX,SY,SZ+.58, Math.PI/2,0,0);
+// Orejas del barril (agarraderas laterales en el extremo trasero)
+mkBox(.24,.04,.06, M.syrB, SX-.14,SY,SZ-.52);
+mkBox(.24,.04,.06, M.syrB, SX+.14,SY,SZ-.52);
+// Manija del émbolo (tapa trasera plana — ya no flota al lado)
+mkBox(.20,.14,.04, M.black, SX,SY,SZ-.60);
+
+// Micro:bit
+const MX=.35, MY=RY+.2, MZ=-.15;
+mkBox(.92,.06,1.12, M.microbit, MX,MY,MZ);
+mkBox(.18,.08,.12, M.black, MX,MY+.04,MZ+.6);
+mkBox(.07,.035,.07, M.black, MX-.5,MY+.04,MZ);
+mkBox(.07,.035,.07, M.black, MX+.5,MY+.04,MZ);
+for(let i=0;i<5;i++) mkCyl(.018,.018,.05,5, M.gold, MX-.3+i*.15,MY-.02,MZ+.62);
+for(let r=0;r<5;r++) for(let c=0;c<5;c++){
+  mkBox(.06,.022,.06, Math.random()>.4?M.ledOn:M.ledOff, MX-.18+c*.09,MY+.04,MZ-.12+r*.09);
+}
+
+// Sensor KS
+mkBox(.56,.05,.47, M.servo, MX,RY+.18,MZ+.55);
+mkSph(.04,6, M.red, MX+.12,RY+.24,MZ+.55);
+mkBox(.1,.03,.1, new THREE.MeshStandardMaterial({color:0x1a1a33,roughness:.4}), MX-.08,RY+.22,MZ+.55);
+for(let i=0;i<3;i++) mkCyl(.01,.01,.06,5, M.gold, MX-.12+i*.12,RY+.14,MZ+.78);
+
+// Cables
+mkTube([V3(MX-.1,MY,MZ+.62), V3(MX-.2,MY+.2,MZ+.45), V3(MX,RY+.22,MZ+.79)], M.wire, .015);
+mkTube([V3(MX+.1,MY,MZ+.62), V3(MX+.18,MY+.18,MZ+.42), V3(MX+.1,RY+.22,MZ+.79)], M.wireY, .015);
+mkTube([V3(MX-.25,MY,MZ+.62), V3(MX-.28,MY+.14,MZ+.46), V3(MX-.1,RY+.22,MZ+.79)], M.wireB, .015);
+// Cable negro micro:bit → servo de azimut (antes suelto, ahora conectado al turret)
+mkTube([
+  V3(MX, MY, MZ+.62),
+  V3(MX+.1, MY+.18, MZ+.38),
+  V3(CX+.25, CY+1.10, CZ+.18),
+  V3(CX, CY+1.22, CZ),
+], M.black, .022);
+
+// ═══════════════════════════════════════════════════
+//  JERINGA ACTUADORA — vertical, nozzle ABAJO, émbolo ARRIBA
+// ═══════════════════════════════════════════════════
+const ACT_X=-2.6, ACT_Y=1.10, ACT_Z=.15;
+const ACT_ANG = 0;  // perfectamente vertical
+
+// Cuerpo + líquido
+mkCyl(.13,.13,2.0,16, M.syrB,   ACT_X,ACT_Y,ACT_Z);
+mkCyl(.10,.10,1.85,14, M.liquid, ACT_X,ACT_Y,ACT_Z);
+// Anillos de graduación (uniformes)
+for(let i=0;i<6;i++) mkCyl(.132,.132,.015,12, M.metal, ACT_X, ACT_Y-0.65+i*0.28, ACT_Z);
+// Orejas centradas y simétricas
+mkBox(.34,.05,.06, M.syrB, ACT_X, ACT_Y+.95, ACT_Z);
+mkBox(.34,.05,.06, M.syrB, ACT_X, ACT_Y-.44, ACT_Z);
+
+// Nozzle apuntando hacia ABAJO
+const tipGrp = new THREE.Group();
+scene.add(tipGrp);
+tipGrp.position.set(ACT_X, ACT_Y, ACT_Z);
+mkCyl(.025,.012,.33,8, M.metal, 0,-.97,0, 0,0,0, tipGrp);
+
+// Émbolo animable (parte SUPERIOR)
+const actPlunger = new THREE.Group();
+actPlunger.position.set(ACT_X, ACT_Y, ACT_Z);
+scene.add(actPlunger);
+mkCyl(.122,.122,.52,16, M.plunger,  0, +.36, 0, 0,0,0, actPlunger);
+mkCyl(.132,.132,.028,14, M.seal,    0, +.10, 0, 0,0,0, actPlunger);
+mkCyl(.038,.038,.24,8,   M.metal,   0, +.68, 0, 0,0,0, actPlunger);
+mkBox(.18,.05,.12, M.black,          0, +.82, 0, 0,0,0, actPlunger);
+
+// ══ SOPORTE RETORT — jeringa actuadora ══
+{
+  const PX = ACT_X + 0.26, BY = RY + 0.05;
+  // Base madera + placa metálica
+  mkBox(0.54,0.085,0.46, M.woodD, PX-0.09, BY,       ACT_Z);
+  mkBox(0.50,0.022,0.42, M.metal, PX-0.09, BY+0.054, ACT_Z);
+  [[-0.21,-0.16],[0.05,-0.16],[-0.21,0.16],[0.05,0.16]].forEach(([dx,dz]) =>
+    mkCyl(0.015,0.015,0.033,6, M.gold, PX+dx, BY+0.063, ACT_Z+dz)
+  );
+  // Poste vertical
+  mkBox(0.052,1.52,0.052, M.metal, PX, BY+0.85, ACT_Z);
+  mkCyl(0.025,0.025,0.070,8, M.gold, PX+0.026, BY+0.21, ACT_Z, 0,0,Math.PI/2);
+  // Brazos + abrazaderas (zona baja del barril — plunger comprimido llega a y≈0.65)
+  const CY1 = ACT_Y-0.56, CY2 = ACT_Y-0.78;
+  const amid = (PX+ACT_X)/2, alen = Math.abs(PX-ACT_X)+0.052;
+  mkBox(alen,0.040,0.040, M.metal, amid, CY1, ACT_Z);
+  mkBox(alen,0.040,0.040, M.metal, amid, CY2, ACT_Z);
+  mkCyl(0.154,0.154,0.052,16, M.metal, ACT_X, CY1, ACT_Z);
+  mkCyl(0.132,0.132,0.052,16, M.servo, ACT_X, CY1, ACT_Z);
+  mkCyl(0.154,0.154,0.052,16, M.metal, ACT_X, CY2, ACT_Z);
+  mkCyl(0.132,0.132,0.052,16, M.servo, ACT_X, CY2, ACT_Z);
+  mkCyl(0.017,0.017,0.062,6, M.gold, ACT_X+0.154, CY1, ACT_Z-0.022, 0,0,Math.PI/2);
+  mkCyl(0.017,0.017,0.062,6, M.gold, ACT_X+0.154, CY2, ACT_Z-0.022, 0,0,Math.PI/2);
+}
+
+// Manguera neumática — nozzle inferior → turret
+mkTube([
+  V3(ACT_X, ACT_Y-1.05, ACT_Z),
+  V3(-2.0,  0.45, 0.10),
+  V3(-1.4,  0.95, 0.05),
+  V3(CX,    CY+1.22, CZ),
+], M.tube, 0.030);
+
+// ═══════════════════════════════════════════════════
+//  JERINGA DE ELEVACIÓN — costado derecho, base baja
+//  alejada del lanzador para no interferir visualmente
+// ═══════════════════════════════════════════════════
+const EX = CX+2.15, EY = CY+0.76, EZ = CZ+1.52;
+// Centro barril ≈ (1.25, 1.15, 1.52); fondo ≈ y=0.55 (sobre el clay)
+
+// Soporte: plataforma + 2 postes laterales + 2 travesaños
+mkBox(0.48,0.09,0.12, M.woodD, EX, CY+0.12, EZ);
+mkBox(0.06,.68,.06, M.wood, EX-.16, CY+.49, EZ);
+mkBox(0.06,.68,.06, M.wood, EX+.16, CY+.49, EZ);
+mkBox(.40,.04,.06, M.wood, EX, CY+.80, EZ);
+mkBox(.40,.04,.06, M.wood, EX, CY+.22, EZ);
+
+// Barril + líquido
+mkCyl(.088,.088,1.20,16, M.syrB,   EX,EY,EZ);
+mkCyl(.070,.070,1.08,14, M.liquid, EX,EY,EZ);
+// Anillos de graduación
+for(let i=0;i<5;i++) mkCyl(.090,.090,.013,12, M.metal, EX, EY-.36+i*.18, EZ);
+// Émbolo + sello (zona superior)
+mkCyl(.080,.080,.30,14, M.plunger, EX, EY+.40, EZ);
+mkCyl(.090,.090,.026,14, M.seal,   EX, EY+.25, EZ);
+// Manija en T
+mkCyl(.014,.014,.16,6, M.metal, EX, EY+.62, EZ);
+mkBox(.32,.05,.05, M.black, EX, EY+.72, EZ);
+// Orejas laterales (zona inferior)
+mkBox(.05,.07,.24, M.syrB, EX-.13, EY-.50, EZ);
+mkBox(.05,.07,.24, M.syrB, EX+.13, EY-.50, EZ);
+// Nozzle abajo
+mkCyl(.022,.011,.28,8, M.metal, EX, EY-.73, EZ);
+
+// Cable negro — nozzle → eje elevación del turret
+mkTube([
+  V3(EX,     EY-.88, EZ),
+  V3(EX-.25, EY-.70, EZ-.42),
+  V3(CX+.30, CY+1.35, CZ+.28),
+  V3(CX,     CY+1.22, CZ),
+], M.black, 0.018);
+
+// ═══════════════════════════════════════════════════
+//  TURRET GROUP — sobre el bloque de arcilla (posición central y prominente)
+// ═══════════════════════════════════════════════════
+const TG = new THREE.Group();
+TG.position.set(CX, CY+1.22, CZ);
+scene.add(TG);
+
+function tBox(w,h,d, mat, px=0,py=0,pz=0, rx=0,ry=0,rz=0){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(px,py,pz); m.rotation.set(rx,ry,rz);
+  m.castShadow=true; m.receiveShadow=true; TG.add(m); return m;
+}
+function tCyl(rt,rb,h,seg, mat, px=0,py=0,pz=0, rx=0,ry=0,rz=0){
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg), mat);
+  m.position.set(px,py,pz); m.rotation.set(rx,ry,rz);
+  m.castShadow=true; TG.add(m); return m;
+}
+
+// Cuerpo servo
+tBox(.54,.22,.54, M.servo);
+tBox(.50,.04,.50, M.metal, 0,.13,0);
+tCyl(.065,.065,.14,10, M.metal, 0,.18,0);
+tCyl(.040,.040,.06,8,  M.gold,  0,.26,0);
+// Tornillos
+[[ .2, .2],[-.2, .2],[ .2,-.2],[-.2,-.2]].forEach(([px,pz]) =>
+  tCyl(.018,.018,.04,6, M.metal, px,.14,pz)
+);
+// Soporte U para jeringa
+[[-0.30,.38,-.16],[0.30,.38,-.16],[-0.30,.38,.16],[0.30,.38,.16]].forEach(([x,y,z]) =>
+  tBox(.06,.22,.06, M.wood, x,y,z)
+);
+tBox(.72,.04,.05, M.wood, 0,.50,-.16);
+tBox(.72,.04,.05, M.wood, 0,.50, .16);
+// Abrazaderas
+tBox(.04,.04,.38, M.metal, -.25,.48,0);
+tBox(.04,.04,.38, M.metal,  .25,.48,0);
+
+// ── Jeringa lanzadora en turret ──
+const SG = new THREE.Group();
+SG.position.set(0, .58, 0);
+TG.add(SG);
+
+const syrBody = new THREE.Mesh(new THREE.CylinderGeometry(.086,.086,1.22,16), M.syr);
+syrBody.rotation.z = Math.PI/2; SG.add(syrBody);
+
+const syrLiquid = new THREE.Mesh(new THREE.CylinderGeometry(.070,.070,1.10,14), M.liquid);
+syrLiquid.rotation.z = Math.PI/2; SG.add(syrLiquid);
+
+// Anillos de graduación
+for(let i=0;i<5;i++){
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(.088,.088,.016,12), M.metal);
+  ring.rotation.z = Math.PI/2; ring.position.x = -.4 + i*.2; SG.add(ring);
+}
+// Punta cánula
+const syrTip = new THREE.Mesh(new THREE.CylinderGeometry(.022,.011,.32,8), M.metal);
+syrTip.rotation.z = Math.PI/2; syrTip.position.x = .77; SG.add(syrTip);
+// Capuchón glow
+const syrCap = new THREE.Mesh(new THREE.CylinderGeometry(.024,.022,.04,8), M.glow);
+syrCap.rotation.z = Math.PI/2; syrCap.position.x = .94; SG.add(syrCap);
+
+// Émbolo (las piezas que se animan al disparar)
+const syrPlunger = new THREE.Mesh(new THREE.CylinderGeometry(.078,.078,.24,14), M.plunger);
+syrPlunger.rotation.z = Math.PI/2; syrPlunger.position.x = -.60; SG.add(syrPlunger);
+
+const syrSeal = new THREE.Mesh(new THREE.CylinderGeometry(.086,.086,.025,14), M.seal);
+syrSeal.rotation.z = Math.PI/2; syrSeal.position.x = -.48; SG.add(syrSeal);
+
+const syrHandle = new THREE.Mesh(new THREE.BoxGeometry(.05,.05,.28), M.black);
+syrHandle.position.x = -.70; SG.add(syrHandle);
+
+const wingL = new THREE.Mesh(new THREE.BoxGeometry(.16,.03,.08), M.servo);
+wingL.position.set(-.70, 0, -.15); SG.add(wingL);
+
+const wingR = new THREE.Mesh(new THREE.BoxGeometry(.16,.03,.08), M.servo);
+wingR.position.set(-.70, 0,  .15); SG.add(wingR);
+
+// Posición de reposo de SG dentro de TG
+const SG_REST = new THREE.Vector3(0, .58, 0);
+
+// ── Partículas ──
+const P_CNT = 180;
+const pGeo  = new THREE.BufferGeometry();
+const pPos  = new Float32Array(P_CNT * 3);
+for(let i=0;i<P_CNT;i++){
+  pPos[i*3]   = (Math.random()-.5)*14;
+  pPos[i*3+1] = Math.random()*8;
+  pPos[i*3+2] = (Math.random()-.5)*10;
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
+  color:0x00e5ff, size:.036, transparent:true, opacity:.38
+})));
+
+// ═══════════════════════════════════════════════════
+//  CÁMARA — ÓRBITA
+// ═══════════════════════════════════════════════════
+const sph = { r:9.5, theta:-.45, phi:.82 };
+function camUpdate(){
+  camera.position.set(
+    sph.r * Math.sin(sph.phi) * Math.sin(sph.theta),
+    sph.r * Math.cos(sph.phi),
+    sph.r * Math.sin(sph.phi) * Math.cos(sph.theta)
+  );
+  camera.lookAt(0, 1, 0);
+}
+camUpdate();
+
+let isDragging = false, lastMouse = { x:0, y:0 };
+canvas3d.addEventListener('mousedown',  e => { isDragging=true; lastMouse={x:e.clientX,y:e.clientY}; });
+canvas3d.addEventListener('mouseup',    () => isDragging=false);
+canvas3d.addEventListener('mouseleave', () => isDragging=false);
+canvas3d.addEventListener('mousemove',  e => {
+  if(!isDragging) return;
+  sph.theta -= (e.clientX-lastMouse.x)*.007;
+  sph.phi    = Math.max(.15, Math.min(1.52, sph.phi + (e.clientY-lastMouse.y)*.007));
+  lastMouse  = {x:e.clientX, y:e.clientY};
+  camUpdate();
+});
+canvas3d.addEventListener('wheel', e => {
+  sph.r = Math.max(3, Math.min(22, sph.r + e.deltaY*.01));
+  camUpdate();
+}, { passive:true });
+
+let tOrbit=false, tPrev={x:0,y:0}, tLastDist=null;
+canvas3d.addEventListener('touchstart', e => {
+  if(e.touches.length===1){ tOrbit=true; tPrev={x:e.touches[0].clientX,y:e.touches[0].clientY}; }
+  if(e.touches.length===2) tLastDist=null;
+}, { passive:true });
+canvas3d.addEventListener('touchmove', e => {
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(tLastDist!==null){ sph.r=Math.max(3,Math.min(22,sph.r+(tLastDist-d)*.03)); camUpdate(); }
+    tLastDist=d;
+  } else if(tOrbit && e.touches.length===1){
+    sph.theta -= (e.touches[0].clientX-tPrev.x)*.008;
+    sph.phi    = Math.max(.15,Math.min(1.52, sph.phi+(e.touches[0].clientY-tPrev.y)*.008));
+    tPrev = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    camUpdate();
+  }
+}, { passive:true });
+canvas3d.addEventListener('touchend', () => { tOrbit=false; tLastDist=null; }, { passive:true });
+
+// ═══════════════════════════════════════════════════
+//  CONTROL DE ELEVACIÓN — solo vertical
+// ═══════════════════════════════════════════════════
+const ELV_MAX = 40; // grados máximos
+let   elvDeg  = 0;
+let   elvNorm = 0;  // -1 a +1
+let   elvDragging = false;
+
+const elvZone = document.getElementById('elv-zone');
+const elvKnob = document.getElementById('elv-knob');
+
+function elvClientToNorm(clientY){
+  const rc  = elvZone.getBoundingClientRect();
+  const half = rc.height/2;
+  const maxR = half - 22;   // margen del knob
+  const raw  = clientY - (rc.top + half);
+  const clamped = Math.max(-maxR, Math.min(maxR, raw));
+  return -clamped / maxR;   // positivo = arriba
+}
+
+function applyElvNorm(norm){
+  elvNorm = norm;
+  elvDeg  = Math.round(norm * ELV_MAX);
+  const rc  = elvZone.getBoundingClientRect();
+  const half = rc.height/2;
+  const maxR = half - 22;
+  const pxOffset = -norm * maxR;
+  elvKnob.style.top  = `calc(50% + ${pxOffset}px)`;
+  elvKnob.style.left = '50%';
+  elvKnob.style.transform = 'translate(-50%,-50%)';
+  SG.rotation.z = (norm) * (Math.PI / 5);
+  refreshELVUI();
+}
+
+function refreshELVUI(){
+  const sign = elvDeg >= 0 ? '+' : '';
+  document.getElementById('elv-readout').innerHTML =
+    `${sign}${elvDeg}°<sub> ELV</sub>`;
+  const pct = Math.round((elvNorm + 1) * 50);
+  document.getElementById('bar-elv').style.width  = pct + '%';
+  document.getElementById('pct-elv').textContent  = pct + '%';
+}
+
+elvZone.addEventListener('mousedown', e => {
+  elvDragging = true;
+  applyElvNorm(elvClientToNorm(e.clientY));
+});
+elvZone.addEventListener('touchstart', e => {
+  e.preventDefault();
+  elvDragging = true;
+  applyElvNorm(elvClientToNorm(e.touches[0].clientY));
+}, { passive:false });
+document.addEventListener('mousemove', e => {
+  if(elvDragging) applyElvNorm(elvClientToNorm(e.clientY));
+});
+document.addEventListener('touchmove', e => {
+  if(elvDragging) applyElvNorm(elvClientToNorm(e.touches[0].clientY));
+}, { passive:true });
+document.addEventListener('mouseup',  () => { elvDragging = false; });
+document.addEventListener('touchend', () => { elvDragging = false; });
+
+function resetElv(){
+  applyElvNorm(0);
+}
+
+// ═══════════════════════════════════════════════════
+//  CONTROL DE AZIMUT — botones con paso fijo
+// ═══════════════════════════════════════════════════
+const AZ_STEP  = 15;   // grados por clic
+const AZ_MIN   = 0;
+const AZ_MAX   = 180;
+const AZ_LERP  = 0.10; // suavidad del interpolado
+
+let azCurrent = 90;    // valor animado actual
+let azTarget  = 90;    // valor objetivo
+let azLheld   = false;
+let azRheld   = false;
+let azBothTmr = null;
+
+function azStep(dir){
+  azTarget = Math.max(AZ_MIN, Math.min(AZ_MAX, azTarget + dir * AZ_STEP));
+  addLog(`AZIMUT → ${azTarget}°`, 'warn');
+}
+function do180(){
+  azTarget = 180 - azTarget;
+  addLog('ROTACIÓN 180° ACTIVADA', 'warn');
+}
+function azLeftDown(){
+  azLheld = true;
+  document.getElementById('btn-az-L').classList.add('pressed');
+  if(azRheld){ clearTimeout(azBothTmr); azBothTmr=setTimeout(do180,80); return; }
+  azStep(-1);
+}
+function azRightDown(){
+  azRheld = true;
+  document.getElementById('btn-az-R').classList.add('pressed');
+  if(azLheld){ clearTimeout(azBothTmr); azBothTmr=setTimeout(do180,80); return; }
+  azStep(+1);
+}
+function azUp(){
+  azLheld=false; azRheld=false;
+  clearTimeout(azBothTmr);
+  document.getElementById('btn-az-L').classList.remove('pressed');
+  document.getElementById('btn-az-R').classList.remove('pressed');
+}
+
+function refreshAZUI(){
+  document.getElementById('az-val').textContent  = String(Math.round(azCurrent)).padStart(3,'0')+'°';
+  document.getElementById('pwm-az').textContent  = Math.round(azCurrent)+'°';
+  const pct = Math.round((azCurrent / 180) * 100);
+  document.getElementById('bar-az').style.width  = pct + '%';
+  document.getElementById('pct-az').textContent  = pct + '%';
+}
+
+function tickAzimuth(){
+  const diff = azTarget - azCurrent;
+  if(Math.abs(diff) > 0.12){
+    azCurrent += diff * AZ_LERP;
+    TG.rotation.y = ((azCurrent - 90) / 90) * (Math.PI / 2);
+    refreshAZUI();
+  } else if(Math.abs(diff) > 0.01){
+    azCurrent = azTarget;
+    TG.rotation.y = ((azCurrent - 90) / 90) * (Math.PI / 2);
+    refreshAZUI();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  FIRE — ANIMACIÓN NEUMÁTICA
+// ═══════════════════════════════════════════════════
+let isShooting = false;
+let shots      = 0;
+
+// Referencias DOM para la animación 2D
+const plungerAsm  = document.getElementById('plunger-asm');
+const rodVis      = document.getElementById('rod-vis');
+const liquidVis   = document.getElementById('liquid-vis');
+const pressArrow  = document.getElementById('press-arrow');
+
+function fireAction(){
+  if(isShooting) return;
+  isShooting = true;
+
+  document.getElementById('btn-fire').classList.add('fired');
+  document.getElementById('hdr-state').textContent = 'COMPRIMIENDO';
+  document.getElementById('hdr-pres').style.color = 'var(--yellow)';
+
+  // Flash FX
+  const fxEl = document.getElementById('launch-fx');
+  fxEl.style.display = 'block';
+  fxEl.classList.remove('fx-on');
+  void fxEl.offsetWidth;
+  fxEl.classList.add('fx-on');
+  setTimeout(() => { fxEl.style.display='none'; }, 750);
+
+  // ── Fase 1: compresión ──
+  pressArrow.classList.add('on');
+  let compPct = 0;
+
+  const intervalComp = setInterval(() => {
+    compPct = Math.min(100, compPct + 4);
+    const t = compPct / 100;
+
+    // Animación 2D plunger — translateY hacia abajo (máx 68px)
+    const pushPx = Math.round(t * 68);
+    plungerAsm.style.transform = `translateY(${pushPx}px)`;
+
+    // Varilla se encoge
+    const rodH = Math.max(2, 28 - t * 26);
+    rodVis.style.height = rodH + 'px';
+
+    // Líquido baja
+    const liqH = Math.round(Math.max(8, 88 - t * 78));
+    liquidVis.style.height = liqH + '%';
+
+    // Barras
+    document.getElementById('bar-comp').style.width = compPct + '%';
+    document.getElementById('pct-comp').textContent  = compPct + '%';
+
+    const kpa = Math.round(compPct * 1.5);
+    document.getElementById('hdr-pres').textContent = kpa + ' kPa';
+
+    // Émbolo actuadora 3D
+    const drop = t * .44;
+    actPlunger.position.x = ACT_X + Math.sin(ACT_ANG) * (-drop);
+    actPlunger.position.y = ACT_Y - Math.cos(ACT_ANG) * drop;
+
+    // Presión eyección
+    const eyPct = Math.min(100, Math.round(compPct * .9));
+    document.getElementById('bar-ey').style.width = eyPct + '%';
+    document.getElementById('pct-ey').textContent  = eyPct + '%';
+
+    // Manómetro
+    refreshGauge(compPct);
+
+    // Manguera
+    const tubePct = Math.min(100, Math.round(Math.max(0, compPct-15) * 1.35));
+    document.getElementById('bar-tube').style.width = tubePct + '%';
+    document.getElementById('pct-tube').textContent  = tubePct + '%';
+
+    if(compPct >= 100) clearInterval(intervalComp);
+  }, 18);
+
+  // ── Fase 2: lanzar la jeringa ──
+  setTimeout(() => {
+    pressArrow.classList.remove('on');
+    addLog(`¡EYECCIÓN! — AZ:${Math.round(azCurrent)}° ELV:${elvDeg >= 0?'+':''}${elvDeg}°`, 'fire');
+    launchSyringe();
+  }, 1950);
+}
+
+function launchSyringe(){
+  const AXIS_X = new THREE.Vector3(1, 0, 0); // created once, reused each frame
+  // Animar émbolo 3D de la jeringa del turret (compresión interna)
+  let ic = 0;
+  const iComp = setInterval(() => {
+    ic = Math.min(1, ic + 0.09);
+    const push = ic * 0.18;
+    syrPlunger.position.x = -.60 + push;
+    syrSeal.position.x    = -.48 + push;
+    syrHandle.position.x  = -.70 + push;
+    wingL.position.x      = -.70 + push;
+    wingR.position.x      = -.70 + push;
+    if(ic >= 1) clearInterval(iComp);
+  }, 22);
+
+  // Lanzar al aire (con retardo pequeño para que se vea la compresión)
+  let phase = 1, slideX = 0, flightT = 0;
+  const capturedZ = SG.rotation.z;
+  let flightDir, flightStart;
+
+  setTimeout(() => {
+    const loop = setInterval(() => {
+      if(phase === 1){
+        slideX += 0.12;
+        SG.position.x = SG_REST.x + slideX;
+        if(slideX >= 1.35){
+          phase = 2; flightT = 0;
+          const wPos = new THREE.Vector3(), wQuat = new THREE.Quaternion();
+          SG.getWorldPosition(wPos); SG.getWorldQuaternion(wQuat);
+          flightDir = new THREE.Vector3(1,0,0).applyQuaternion(wQuat).normalize();
+          TG.remove(SG); scene.add(SG);
+          SG.position.copy(wPos); SG.quaternion.copy(wQuat);
+          flightStart = wPos.clone();
+        }
+      } else {
+        flightT += .05;
+        SG.position.x = flightStart.x + flightDir.x * flightT * 5;
+        SG.position.y = flightStart.y + flightDir.y * flightT * 5 - flightT*flightT*.8;
+        SG.position.z = flightStart.z + flightDir.z * flightT * 5;
+        SG.rotateOnAxis(AXIS_X, .10);
+        if(flightT > 2.2){
+          clearInterval(loop);
+          setTimeout(resetAll, 500);
+        }
+      }
+    }, 16);
+  }, 350);
+
+  shots++;
+  document.getElementById('shot-count').textContent = String(shots).padStart(3,'0');
+}
+
+function resetAll(){
+  // 3D syringe
+  scene.remove(SG);
+  SG.position.copy(SG_REST);
+  // Reset syringe back to current elevation (don't use SG.rotation.z — it's corrupted by rotateOnAxis during flight)
+  SG.rotation.set(0, 0, elvNorm * (Math.PI / 5));
+  // Reset émbolo 3D
+  syrPlunger.position.x = -.60;
+  syrSeal.position.x    = -.48;
+  syrHandle.position.x  = -.70;
+  wingL.position.x      = -.70;
+  wingR.position.x      = -.70;
+  TG.add(SG);
+  // Reset actuadora 3D
+  actPlunger.position.set(ACT_X, ACT_Y, ACT_Z);
+  // Reset 2D plunger asm
+  plungerAsm.style.transform = 'translateY(0px)';
+  rodVis.style.height = '28px';
+  liquidVis.style.height = '88%';
+  // Reset bars
+  ['bar-ey','bar-comp','bar-tube'].forEach(id => document.getElementById(id).style.width='0%');
+  ['pct-ey','pct-comp','pct-tube'].forEach(id => document.getElementById(id).textContent='0%');
+  refreshGauge(0);
+  document.getElementById('btn-fire').classList.remove('fired');
+  document.getElementById('hdr-state').textContent = 'STANDBY';
+  document.getElementById('hdr-pres').textContent  = '0 kPa';
+  document.getElementById('hdr-pres').style.color  = '';
+  addLog('ACTUADOR RESET — STANDBY', 'ok');
+  isShooting = false;
+}
+
+function refreshGauge(pct){
+  // Gauge starts at bottom-left (0°) and sweeps 270° clockwise
+  // The ring is rotated 135deg in CSS, so we map 0-100% → 0-270deg
+  const deg = Math.round(pct / 100 * 270);
+  document.getElementById('gauge-ring').style.background =
+    `conic-gradient(#ff3d71 0deg, #ff3d71 ${deg}deg, #1a2840 ${deg}deg)`;
+  document.getElementById('gauge-psi').textContent = Math.round(pct * 1.5);
+}
+
+// ═══════════════════════════════════════════════════
+//  MICRO:BIT LED MATRIX
+// ═══════════════════════════════════════════════════
+const mbGrid = document.getElementById('mb-grid');
+for(let i=0;i<25;i++){
+  const d = document.createElement('div');
+  d.className = 'mb-led'; d.id = 'mb'+i; mbGrid.appendChild(d);
+}
+const PATS = [
+  [0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,0,0,0,1,0,0],
+  [0,0,1,0,0,0,0,0,1,0,1,1,1,1,1,0,0,0,1,0,0,0,1,0,0],
+  [1,0,0,0,1,0,1,0,1,0,0,0,1,0,0,0,1,0,1,0,1,0,0,0,1],
+  [0,1,0,1,0,0,1,0,1,0,0,0,0,0,0,1,0,0,0,1,0,1,1,1,0],
+  [0,0,1,0,0,0,1,1,1,0,1,1,1,1,1,0,1,1,1,0,0,0,1,0,0],
+];
+let patIdx = 0;
+function showPat(p){ for(let i=0;i<25;i++) document.getElementById('mb'+i).className='mb-led'+(p[i]?' on':''); }
+showPat(PATS[0]);
+setInterval(() => { patIdx = (patIdx+1)%PATS.length; showPat(PATS[patIdx]); }, 1600);
+
+// ═══════════════════════════════════════════════════
+//  TECLADO
+// ═══════════════════════════════════════════════════
+window.addEventListener('keydown', e => {
+  if(e.code==='Space')     { e.preventDefault(); fireAction(); }
+  if(e.code==='ArrowLeft') { e.preventDefault(); azStep(-1); }
+  if(e.code==='ArrowRight'){ e.preventDefault(); azStep(+1); }
+  if(e.code==='ArrowUp')   { e.preventDefault(); applyElvNorm(Math.min(1, elvNorm+.125)); }
+  if(e.code==='ArrowDown') { e.preventDefault(); applyElvNorm(Math.max(-1, elvNorm-.125)); }
+  if(e.code==='KeyR')      { e.preventDefault(); do180(); }
+});
+
+// ═══════════════════════════════════════════════════
+//  PANELS RESPONSIVE
+// ═══════════════════════════════════════════════════
+(function(){
+  const togL = document.getElementById('tog-L');
+  const togR = document.getElementById('tog-R');
+  const bd   = document.getElementById('panel-backdrop');
+  const pL   = document.getElementById('panel-L');
+  const pR   = document.getElementById('panel-R');
+  function closeAll(){
+    [pL,pR].forEach(p => p.classList.remove('open'));
+    [togL,togR].forEach(t => t.classList.remove('active'));
+    bd.classList.remove('show');
+  }
+  togL.addEventListener('click', () => {
+    const isOpen = pL.classList.contains('open');
+    closeAll();
+    if(!isOpen){ pL.classList.add('open'); togL.classList.add('active'); bd.classList.add('show'); }
+  });
+  togR.addEventListener('click', () => {
+    const isOpen = pR.classList.contains('open');
+    closeAll();
+    if(!isOpen){ pR.classList.add('open'); togR.classList.add('active'); bd.classList.add('show'); }
+  });
+  bd.addEventListener('click', closeAll);
+  window.addEventListener('resize', () => { if(innerWidth > 640) closeAll(); });
+})();
+
+// ═══════════════════════════════════════════════════
+//  LOG
+// ═══════════════════════════════════════════════════
+function addLog(msg, cls='ok'){
+  const lb  = document.getElementById('log-box');
+  const now = new Date();
+  const ts  = `${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const row = document.createElement('div');
+  row.className = 'log-row';
+  row.innerHTML = `<span class="log-t">[${ts}]</span><span class="log-m ${cls}">${msg}</span>`;
+  lb.appendChild(row);
+  lb.scrollTop = lb.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════════════════════
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // Floating particles
+  for(let i=0;i<P_CNT;i++){
+    pPos[i*3+1] += .003;
+    if(pPos[i*3+1] > 8) pPos[i*3+1] = 0;
+  }
+  pGeo.attributes.position.needsUpdate = true;
+
+  // Pulsing lights
+  ptRed.intensity  = 1.6 + Math.sin(t*2.1)*.6;
+  ptCyan.intensity = 1.3 + Math.sin(t*1.7+1)*.5;
+  ptWarm.intensity = 0.7 + Math.sin(t*1.0+2)*.3;
+
+  tickAzimuth();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ── Initial state ──
+refreshELVUI();
+refreshAZUI();
+
+// Startup log
+setTimeout(() => addLog('SISTEMA INICIALIZADO','ok'), 200);
+setTimeout(() => addLog('micro:bit CONECTADO — P0 P1 P2 OK','ok'), 600);
+setTimeout(() => addLog('SERVO AZIMUT: LISTO — 90°','ok'), 1000);
+setTimeout(() => addLog('SERVO ELEVACIÓN: LISTO','ok'), 1400);
+setTimeout(() => addLog('SENSOR KS: ACTIVO','ok'), 1800);
+setTimeout(() => addLog('ACTUADOR NEUMÁTICO: CARGADO — 10 ml','ok'), 2200);
+setTimeout(() => addLog('[◄][►] AZIMUT  [↑↓] ELV  [SPACE] FIRE  [R] 180°','warn'), 2800);
+</script>
+</body>
+</html>
